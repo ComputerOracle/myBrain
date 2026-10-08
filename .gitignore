@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+brain-app/node_modules/
+
+# Production builds
+dist/
+brain-app/dist/
+dist-ssr/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment and local files
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
