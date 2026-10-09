@@ -5,84 +5,173 @@ Command: npx gltfjsx@6.5.3 public/full_brain_model.glb
 
 import React from 'react'
 import { useGLTF } from '@react-three/drei'
+import { ANATOMY_DATA } from './anatomyData.js'
 
-export function Model({ isAdvanced = false, ...props }) {
+// Backwards-compatible export mapping mesh names to their functional display names
+export const functionalAliases = Object.fromEntries(
+  Object.entries(ANATOMY_DATA).map(([k, v]) => [k, v.displayName])
+)
+
+export function Model({
+  currentStage = 'macro',
+  activeGroup = 'Frontal',
+  selectedMesh = null,
+  onSelectMesh,
+  onSelectGroup,
+  ...props
+}) {
   const { nodes } = useGLTF('/full_brain_model.glb')
-
-  // Array of cortical region names (the outer shell parts)
-  const corticalRegions = [
-    'Frontal_Pole',
-    'Insular_Cortex',
-    'Superior_Frontal_Gyrus',
-    'Middle_Frontal_Gyrus',
-    'Inferior_Frontal_Gyrus,_pars_triangularis',
-    'Inferior_Frontal_Gyrus,_pars_opercularis',
-    'Precentral_Gyrus',
-    'Temporal_Pole',
-    'Superior_Temporal_Gyrus,_anterior_division',
-    'Superior_Temporal_Gyrus,_posterior_division',
-    'Middle_Temporal_Gyrus,_anterior_division',
-    'Middle_Temporal_Gyrus,_posterior_division',
-    'Middle_Temporal_Gyrus,_temporooccipital_part',
-    'Inferior_Temporal_Gyrus,_anterior_division',
-    'Inferior_Temporal_Gyrus,_posterior_division',
-    'Inferior_Temporal_Gyrus,_temporooccipital_part',
-    'Postcentral_Gyrus',
-    'Superior_Parietal_Lobule',
-    'Supramarginal_Gyrus,_anterior_division',
-    'Supramarginal_Gyrus,_posterior_division',
-    'Angular_Gyrus',
-    'Lateral_Occipital_Cortex,_superior_division',
-    'Lateral_Occipital_Cortex,_inferior_division',
-    'Intracalcarine_Cortex',
-    'Frontal_Medial_Cortex',
-    'Juxtapositional_Lobule_Cortex_(formerly_Supplementary_Motor_Cortex)',
-    'Subcallosal_Cortex',
-    'Paracingulate_Gyrus',
-    'Cingulate_Gyrus,_anterior_division',
-    'Cingulate_Gyrus,_posterior_division',
-    'Precuneous_Cortex',
-    'Cuneal_Cortex',
-    'Frontal_Orbital_Cortex',
-    'Parahippocampal_Gyrus,_anterior_division',
-    'Parahippocampal_Gyrus,_posterior_division',
-    'Lingual_Gyrus',
-    'Temporal_Fusiform_Cortex,_anterior_division',
-    'Temporal_Fusiform_Cortex,_posterior_division',
-    'Temporal_Occipital_Fusiform_Cortex',
-    'Occipital_Fusiform_Gyrus',
-    'Frontal_Opercular_Cortex',
-    'Central_Opercular_Cortex',
-    'Parietal_Opercular_Cortex',
-    'Planum_Polare',
-    "Heschl's_Gyrus_(includes_H1_and_H2)",
-    'Planum_Temporale',
-    'Supracalcarine_Cortex',
-    'Occipital_Pole',
-    'Left_Cerebral_White_Matter',
-    'Left_Cerebral_Cortex',
-    'Right_Cerebral_White_Matter',
-    'Right_Cerebral_Cortex',
-  ]
 
   return (
     <group position={[-91.5, -110.0, -78.1]} {...props} dispose={null}>
       {Object.entries(nodes).map(([name, node]) => {
         if (!node?.geometry) return null
-        const isCortical = corticalRegions.includes(name)
+
+        // Hide duplicate general cerebral shell geometry to avoid raycast occlusion of specific gyri and deep core
+        if (name.includes('Cerebral')) return null
+
+        const anatomy = ANATOMY_DATA[name] || {}
+        const parentGroup = anatomy.parentGroup || 'Subcortical'
+        const isCorticalLobe = ['Frontal', 'Parietal', 'Temporal', 'Occipital'].includes(parentGroup)
+
+        // ==========================================
+        // 1. DEEP CORE STAGE
+        // ==========================================
+        if (currentStage === 'deep_core') {
+          // Hide all 4 cortical lobes completely
+          if (isCorticalLobe) {
+            return null
+          }
+
+          // Subcortical and cerebellar structures are fully exposed
+          const isSelected = selectedMesh === name
+
+          return (
+            <mesh
+              key={name}
+              name={name}
+              geometry={node.geometry}
+              castShadow
+              receiveShadow
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelectMesh?.(name)
+              }}
+            >
+              {isSelected ? (
+                <meshPhysicalMaterial
+                  color="#ffd700"
+                  roughness={0.3}
+                  metalness={0.2}
+                  clearcoat={0.8}
+                  clearcoatRoughness={0.1}
+                />
+              ) : (
+                <meshPhysicalMaterial
+                  color="#9ca3af"
+                  roughness={0.65}
+                  metalness={0.1}
+                  clearcoat={0.1}
+                />
+              )}
+            </mesh>
+          )
+        }
+
+        // ==========================================
+        // 2. LOBE FOCUS STAGE
+        // ==========================================
+        if (currentStage === 'lobe_focus') {
+          const isMemberOfActiveGroup = parentGroup === activeGroup
+
+          if (!isMemberOfActiveGroup) {
+            // Drop other cortical, cerebellar, and subcortical meshes to faint ghost silhouette (opacity 0.05)
+            // raycast={() => null} ensures clicks never get blocked by ghost meshes
+            return (
+              <mesh
+                key={name}
+                name={name}
+                geometry={node.geometry}
+                raycast={() => null}
+              >
+                <meshPhysicalMaterial
+                  color="#9ca3af"
+                  roughness={0.8}
+                  transparent={true}
+                  opacity={0.05}
+                  depthWrite={false}
+                />
+              </mesh>
+            )
+          }
+
+          // Meshes belonging to activeGroup are fully opaque and individually clickable
+          const isSelected = selectedMesh === name
+
+          return (
+            <mesh
+              key={name}
+              name={name}
+              geometry={node.geometry}
+              castShadow
+              receiveShadow
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelectMesh?.(name)
+              }}
+            >
+              {isSelected ? (
+                <meshPhysicalMaterial
+                  color="#00e5ff"
+                  roughness={0.3}
+                  metalness={0.2}
+                  clearcoat={0.8}
+                  clearcoatRoughness={0.1}
+                />
+              ) : (
+                <meshPhysicalMaterial
+                  color="#ffd2a8"
+                  roughness={0.3}
+                  metalness={0.2}
+                  clearcoat={0.8}
+                  clearcoatRoughness={0.1}
+                />
+              )}
+            </mesh>
+          )
+        }
+
+        // ==========================================
+        // 3. MACRO STAGE (Overview)
+        // ==========================================
+        const isGroupActive = parentGroup === activeGroup
+
         return (
-          <mesh key={name} name={name} geometry={node.geometry}>
-            {isCortical ? (
-              <meshStandardMaterial
-                transparent={true}
-                opacity={isAdvanced ? 0.15 : 1}
-                flatShading={false}
+          <mesh
+            key={name}
+            name={name}
+            geometry={node.geometry}
+            castShadow
+            receiveShadow
+            onClick={(e) => {
+              e.stopPropagation()
+              onSelectGroup?.(parentGroup)
+            }}
+          >
+            {isGroupActive ? (
+              <meshPhysicalMaterial
+                color="#ffd2a8"
+                roughness={0.3}
+                metalness={0.2}
+                clearcoat={0.8}
+                clearcoatRoughness={0.1}
               />
             ) : (
-              <meshStandardMaterial
-                transparent={false}
-                opacity={1}
-                flatShading={false}
+              <meshPhysicalMaterial
+                color="#9ca3af"
+                roughness={0.65}
+                metalness={0.1}
+                clearcoat={0.1}
               />
             )}
           </mesh>
